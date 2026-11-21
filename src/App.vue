@@ -1,41 +1,60 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { Activity, Bell, Box, ChartNoAxesCombined, ChevronDown, CircleHelp, Cloud, Command, Cpu, Database, Download, ExternalLink, FileText, Gauge, Github, HardDrive, LayoutDashboard, LifeBuoy, Menu, Search, Server, Settings, ShieldCheck, ShieldAlert, Terminal, Wifi, X, Zap } from 'lucide-vue-next'
-const activeNav=ref('总览'),period=ref('最近 24 小时'),menuOpen=ref(false),activeAlert=ref(null),apiStatus=ref('connecting')
-const API_BASE=(import.meta.env.VITE_API_BASE_URL||'').replace(/\/$/,'')
-const apiUrl=(path)=>API_BASE+path
-const notices=ref([])
-const pending=computed(()=>notices.value.filter(a=>a.level!=='resolved'))
-const nav=[{group:'工作台',items:[{label:'总览',icon:LayoutDashboard},{label:'基础设施',icon:Server},{label:'监控指标',icon:ChartNoAxesCombined},{label:'告警中心',icon:Bell,badge:pending.value.length.toString()}]},{group:'运维管理',items:[{label:'巡检任务',icon:ShieldCheck},{label:'变更记录',icon:FileText},{label:'自动化',icon:Zap}]}]
-const services=ref([{name:'Web 应用集群',meta:'web-prod · 8 节点',status:'运行中',tone:'green',uptime:'99.98%',cpu:42,icon:Cloud},{name:'核心数据库',meta:'mysql-primary · 主从',status:'运行中',tone:'green',uptime:'99.99%',cpu:61,icon:Database},{name:'缓存服务',meta:'redis-cluster · 6 节点',status:'运行中',tone:'green',uptime:'99.97%',cpu:28,icon:Box},{name:'消息队列',meta:'rabbitmq-prod · 3 节点',status:'需关注',tone:'amber',uptime:'99.82%',cpu:78,icon:Activity}])
-const bars=[38,48,42,55,47,63,52,58,45,51,68,56,48,71,61,58,74,62,55,67,81,59,54,69,58,51,65,76,61,55,72,62,48,57,68,59,54,72,63,50,60,74,62,56,69,58,50,65,77,61,54,70,59,47,64,74,57,52,68,60,51,66,73,55,49,65,78,58,52,69,61,47,63,75,56,51,67,59,48,62]
-function mapAlert(a){return {...a,level:a.severity==='CRITICAL'?'critical':a.status==='RESOLVED'?'resolved':'warning',detail:a.resource,time:new Date(a.createdAt).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}),tag:a.status==='RESOLVED'?'已恢复':a.severity==='CRITICAL'?'处理中':'待处理'}}
-async function loadAlerts(){try{const r=await fetch(apiUrl('/api/alerts'));if(!r.ok)throw new Error('API '+r.status);notices.value=(await r.json()).map(mapAlert);apiStatus.value='online'}catch(e){apiStatus.value='offline';console.error('Alert API unavailable',e)}}
-async function resolveAlert(a){if(!a.id)return;try{const r=await fetch(apiUrl(`/api/alerts/${encodeURIComponent(a.id)}/resolve`),{method:'PATCH'});if(!r.ok)throw new Error('API '+r.status);a.status='RESOLVED';a.level='resolved';a.tag='已恢复';activeAlert.value=null}catch(e){apiStatus.value='offline';console.error(e)}}
-onMounted(loadAlerts)
-function downloadReport(){let a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['OpsPilot 运维周报\n生成时间：'+new Date().toLocaleString('zh-CN')+'\n服务可用率：99.97%\n待处理告警：'+pending.value.length],{type:'text/plain'}));a.download='opspilot-ops-report.txt';a.click();URL.revokeObjectURL(a.href)}
+import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
+import { RouterLink, RouterView, useRoute } from 'vue-router'
+import { Activity, Bell, Box, ChartNoAxesCombined, ChevronDown, FileText, LayoutDashboard, Menu, Search, Server, Settings, ShieldCheck, WandSparkles, X } from 'lucide-vue-next'
+import { pendingAlerts, refreshAlerts } from './composables/useAlerts'
+
+const route = useRoute()
+const menuOpen = ref(false)
+const activeTitle = computed(() => route.meta.title || '总览')
+const navGroups = [
+  { group: '工作台', items: [
+    { label: '总览', path: '/', icon: LayoutDashboard },
+    { label: '基础设施', path: '/infrastructure', icon: Server },
+    { label: '监控指标', path: '/metrics', icon: ChartNoAxesCombined },
+    { label: '告警中心', path: '/alerts', icon: Bell, badge: true },
+  ] },
+  { group: '运维管理', items: [
+    { label: '巡检任务', path: '/inspections', icon: ShieldCheck },
+    { label: '变更记录', path: '/changes', icon: FileText },
+    { label: '自动化', path: '/automation', icon: WandSparkles },
+  ] },
+]
+let refreshTimer
+onMounted(() => {
+  refreshAlerts()
+  refreshTimer = window.setInterval(refreshAlerts, 30000)
+})
+onBeforeUnmount(() => window.clearInterval(refreshTimer))
 </script>
+
 <template>
-<div class="shell">
- <aside class="sidebar" :class="{open:menuOpen}"><div class="brand"><div class="brand-mark"><Activity :size="19"/></div><div><b>OpsPilot</b><span>INFRASTRUCTURE</span></div><button class="icon-btn close-menu" @click="menuOpen=false"><X :size="18"/></button></div>
- <button class="workspace"><div class="workspace-avatar">A</div><div><strong>Acme 工作空间</strong><small>生产环境</small></div><ChevronDown :size="15"/></button>
- <div v-for="group in nav" :key="group.group" class="nav-group"><p>{{group.group}}</p><button v-for="item in group.items" :key="item.label" class="nav-item" :class="{selected:activeNav===item.label}" @click="activeNav=item.label;menuOpen=false"><component :is="item.icon" :size="17"/><span>{{item.label}}</span><em v-if="item.badge">{{pending.length}}</em></button></div>
- <div class="sidebar-bottom"><div class="side-status"><span class="pulse"></span><span>所有系统运行正常</span></div><button class="nav-item"><Settings :size="17"/><span>设置</span></button><button class="profile"><div class="profile-avatar">林</div><div><strong>林同学</strong><small>运维工程师候选人</small></div><ChevronDown :size="15"/></button></div></aside>
- <div v-if="menuOpen" class="scrim" @click="menuOpen=false"></div>
- <main class="main"><header class="topbar"><div class="crumb"><button class="icon-btn mobile-menu" @click="menuOpen=true"><Menu/></button><span>工作台</span><b>/</b><strong>{{activeNav}}</strong></div><div class="top-actions"><button class="searchbox"><Search :size="16"/><span>搜索资源、告警...</span><kbd>⌘ K</kbd></button><button class="icon-btn notification" @click="activeNav='告警中心'"><Bell :size="18"/><i v-if="pending.length"></i></button><div class="top-avatar">林</div></div></header>
- <section class="content"><div class="heading"><div><div class="eyebrow"><span class="pulse"></span>系统运行概览 <span class="updated">{{apiStatus==='online'?'实时 API 数据':apiStatus==='offline'?'API 暂不可用':'正在连接 API'}}</span></div><h1>早上好，林同学 <span>✳</span></h1><p>这是你的生产环境运行情况。所有关键服务均在监控之中。</p></div><div class="heading-actions"><button class="button secondary" @click="downloadReport"><Download :size="16"/>导出报告</button><button class="button primary" @click="activeNav='巡检任务'"><ShieldCheck :size="16"/>开始巡检</button></div></div>
- <div class="metrics"><article class="metric"><div class="metric-label">服务可用率 <span class="metric-icon mint"><Activity :size="17"/></span></div><div class="metric-value">99.97<span>%</span></div><div class="metric-foot"><span class="positive">↑ 0.03%</span><span>较上周</span><div class="spark mint-line"><i v-for="n in [9,13,10,16,12,21,18,24,20,30,25,36,31,42,38,51]" :key="n" :style="{height:n+'px'}"></i></div></div></article>
- <article class="metric"><div class="metric-label">在线服务器 <span class="metric-icon blue"><Server :size="17"/></span></div><div class="metric-value">24<span class="sub-value">/ 24</span></div><div class="metric-foot"><span class="positive">全部在线</span><span>跨 3 个可用区</span><div class="mini-nodes"><i v-for="n in 12" :key="n"></i></div></div></article>
- <article class="metric"><div class="metric-label">待处理告警 <span class="metric-icon orange"><Bell :size="17"/></span></div><div class="metric-value">{{pending.length.toString().padStart(2,'0')}}<span class="sub-value"> 条</span></div><div class="metric-foot"><span class="warning-text">{{pending.some(a=>a.level==='critical')?'1 条高优先级':'无高优先级'}}</span><span>需要关注</span><div class="alert-mini"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div></div></article>
- <article class="metric"><div class="metric-label">平均 CPU 使用率 <span class="metric-icon purple"><Cpu :size="17"/></span></div><div class="metric-value">52<span>%</span></div><div class="metric-foot"><span class="positive">↓ 4.2%</span><span>较昨日</span><div class="spark purple-line"><i v-for="n in [17,20,16,28,21,32,25,35,28,42,34,38,29,44,37,48]" :key="n" :style="{height:n+'px'}"></i></div></div></article></div>
- <div class="dashboard-grid"><section class="panel chart-panel"><div class="panel-head"><div><h2>基础设施健康度</h2><p>所有节点的整体资源使用情况</p></div><button class="select-button" @click="period=period==='最近 24 小时'?'最近 7 天':'最近 24 小时'">{{period}} <ChevronDown :size="14"/></button></div><div class="chart-legend"><span><i class="legend-dot cpu"></i>CPU 使用率</span><span><i class="legend-dot mem"></i>内存使用率</span><span class="legend-note"><span class="live-dot"></span>实时数据</span></div><div class="chart"><div class="y-axis"><span>100%</span><span>75%</span><span>50%</span><span>25%</span><span>0%</span></div><div class="plot"><div class="grid-line" v-for="i in 5" :key="i"></div><div class="area area-blue"></div><div class="area area-mint"></div><div class="bars"><i v-for="(bar,i) in bars" :key="i" :style="{height:bar+'%'}"></i></div></div></div><div class="x-axis"><span>00:00</span><span>04:00</span><span>08:00</span><span>12:00</span><span>16:00</span><span>20:00</span><span>现在</span></div><div class="chart-foot"><span><span class="pulse"></span>采集间隔 30 秒</span><span>Prometheus · 24 个节点</span></div></section>
- <section class="panel alert-panel"><div class="panel-head"><div><h2>最近告警 <span class="count-pill">{{pending.length}}</span></h2><p>需要你关注的事件</p></div><button class="text-link" @click="activeNav='告警中心'">查看全部</button></div><div class="alert-list"><article v-for="alert in notices" :key="alert.title" class="alert-row" :class="alert.level" @click="activeAlert=alert"><span class="alert-symbol"><ShieldAlert v-if="alert.level!=='resolved'" :size="16"/><ShieldCheck v-else :size="16"/></span><div class="alert-info"><strong>{{alert.title}}</strong><span>{{alert.detail}}</span></div><div class="alert-meta"><time>{{alert.time}}</time><span class="alert-tag">{{alert.tag}}</span></div></article></div><div class="alert-summary"><div class="avatar-stack"><i>运</i><i>开</i><i>+</i></div><span>值班团队已收到告警通知</span></div></section>
- <section class="panel services-panel"><div class="panel-head"><div><h2>关键服务</h2><p>核心服务状态与资源占用</p></div><button class="text-link" @click="activeNav='基础设施'">管理服务</button></div><div class="service-table"><div class="table-head"><span>服务名称</span><span>状态</span><span>可用率</span><span>CPU</span></div><div class="service-row" v-for="service in services" :key="service.name"><div class="service-name"><span class="service-icon"><component :is="service.icon" :size="17"/></span><span><b>{{service.name}}</b><small>{{service.meta}}</small></span></div><div><span class="status-chip" :class="service.tone"><i></i>{{service.status}}</span></div><div class="uptime">{{service.uptime}}</div><div class="cpu-cell"><span class="cpu-track"><i :class="service.cpu>70?'hot':''" :style="{width:service.cpu+'%'}"></i></span><small>{{service.cpu}}%</small></div></div></div></section>
- <section class="panel checklist-panel"><div class="panel-head"><div><h2>今日巡检</h2><p>生产环境日常巡检 · 09:00</p></div><span class="done-pill">进行中</span></div><div class="check-progress"><div><strong>3</strong><span>/ 5 项完成</span></div><b>60%</b></div><div class="progress-track"><i></i></div><div class="check-items"><div><span class="check done">✓</span><span>服务器负载与磁盘空间</span><small>09:04</small></div><div><span class="check done">✓</span><span>数据库主从同步状态</span><small>09:08</small></div><div><span class="check done">✓</span><span>备份任务执行结果</span><small>09:12</small></div><div><span class="check pending-check"></span><span>证书到期时间检查</span><small>待检查</small></div><div><span class="check pending-check"></span><span>安全补丁与登录审计</span><small>待检查</small></div></div><button class="button secondary full" @click="activeNav='巡检任务'">继续巡检</button></section></div>
- <footer><span>OpsPilot · 运维工程师面试作品集</span><span><span class="pulse"></span>数据更新时间 10:44:32 <b>·</b> {{apiStatus==='online'?'Redis 实时 API':apiStatus==='offline'?'API 离线':'API 连接中'}}</span></footer></section></main>
- <div v-if="activeAlert" class="modal-backdrop" @click.self="activeAlert=null"><div class="modal"><button class="icon-btn modal-close" @click="activeAlert=null"><X/></button><span class="alert-symbol big"><ShieldAlert/></span><p class="eyebrow">告警详情 · {{activeAlert.time}}</p><h2>{{activeAlert.title}}</h2><p>{{activeAlert.detail}}</p><div class="modal-note"><b>建议处理</b><span>检查对应节点资源使用情况，查看近期部署与请求日志，确认影响范围后执行恢复操作。</span></div><button v-if="activeAlert.level!=='resolved'" class="button primary full" @click="resolveAlert(activeAlert)">标记为已恢复</button></div></div>
-</div>
+  <div class="shell">
+    <aside class="sidebar" :class="{ open: menuOpen }">
+      <div class="brand">
+        <RouterLink class="brand-home" to="/" @click="menuOpen = false"><div class="brand-mark"><Activity :size="19" /></div><div><b>OpsPilot</b><span>INFRASTRUCTURE</span></div></RouterLink>
+        <button class="icon-btn close-menu" aria-label="关闭导航" @click="menuOpen = false"><X :size="18" /></button>
+      </div>
+      <div class="workspace"><div class="workspace-avatar">A</div><div><strong>Acme 工作空间</strong><small>面试演示环境</small></div><ChevronDown :size="15" /></div>
+      <div v-for="group in navGroups" :key="group.group" class="nav-group">
+        <p>{{ group.group }}</p>
+        <RouterLink v-for="item in group.items" :key="item.path" :to="item.path" class="nav-item" :class="{ selected: route.path === item.path }" :aria-current="route.path === item.path ? 'page' : undefined" @click="menuOpen = false">
+          <component :is="item.icon" :size="17" /><span>{{ item.label }}</span><em v-if="item.badge && pendingAlerts.length">{{ pendingAlerts.length }}</em>
+        </RouterLink>
+      </div>
+      <div class="sidebar-bottom">
+        <div class="side-status demo-status"><span class="pulse"></span><span>演示环境 · 指标部分为模拟数据</span></div>
+        <RouterLink class="nav-item" to="/settings" :class="{ selected: route.path === '/settings' }" @click="menuOpen = false"><Settings :size="17" /><span>设置与连接</span></RouterLink>
+        <div class="profile"><div class="profile-avatar">林</div><div><strong>林同学</strong><small>运维工程师候选人</small></div><ChevronDown :size="15" /></div>
+      </div>
+    </aside>
+    <div v-if="menuOpen" class="scrim" @click="menuOpen = false"></div>
+    <main class="main">
+      <header class="topbar">
+        <div class="crumb"><button class="icon-btn mobile-menu" aria-label="打开导航" @click="menuOpen = true"><Menu /></button><span>工作台</span><b>/</b><strong>{{ activeTitle }}</strong></div>
+        <div class="top-actions"><RouterLink class="searchbox" to="/alerts"><Search :size="16" /><span>查看告警与事件</span><kbd>↵</kbd></RouterLink><RouterLink class="icon-btn notification" to="/alerts" aria-label="打开告警中心"><Bell :size="18" /><i v-if="pendingAlerts.length" /></RouterLink><div class="top-avatar">林</div></div>
+      </header>
+      <RouterView />
+    </main>
+  </div>
 </template>
-
-
-
