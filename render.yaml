@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: opspilot-api
+    runtime: docker
+    region: singapore
+    plan: free
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /api/health
+    envVars:
+      - key: REDIS_HOST
+        fromService:
+          type: keyvalue
+          name: opspilot-redis
+          property: host
+      - key: REDIS_PORT
+        fromService:
+          type: keyvalue
+          name: opspilot-redis
+          property: port
+      - key: APP_CORS_ORIGIN
+        value: https://bart41346.github.io
+  - type: keyvalue
+    name: opspilot-redis
+    region: singapore
+    plan: free
+    ipAllowList: []
+    maxmemoryPolicy: noeviction
+    persistenceMode: off

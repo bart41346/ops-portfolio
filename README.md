@@ -39,3 +39,17 @@ GitHub Pages 只托管静态前端，不运行 Spring Boot/Redis。线上页面�
 - 讨论生产化改进：MySQL 持久化审计记录、鉴权、告警去重、限流、日志追踪、健康检查、备份与告警通知。
 
 > 本作品集以演示数据呈现。请将“林同学”、Acme 及架构指标替换为你的实际面试信息与真实经历。
+## Deploy Spring Boot + Redis API
+
+The `render.yaml` Blueprint creates the Spring Boot Docker web service and a private, Singapore-region Render Key Value instance. In Render, choose **New → Blueprint**, select this public repository, and deploy the Blueprint. The free tier is suitable for this interview demo: the web service can sleep after inactivity, and free Key Value storage does not persist data, so treat alerts as disposable demo records. For durable operation, upgrade the API and Redis-compatible datastore to paid plans.
+
+After Render creates the API, copy its `onrender.com` URL, then build the GitHub Pages frontend with `VITE_API_BASE_URL` set to that URL. For example, in PowerShell:
+
+```powershell
+$env:GITHUB_ACTIONS='true'
+$env:GITHUB_REPOSITORY='bart41346/ops-portfolio'
+$env:VITE_API_BASE_URL='https://YOUR-API.onrender.com'
+npm run build
+```
+
+Publish the resulting `dist` contents to the `gh-pages` branch. The dashboard calls `GET /api/alerts` on load and `PATCH /api/alerts/{id}/resolve` when an alert is marked recovered. The API health endpoint is `GET /api/health`.

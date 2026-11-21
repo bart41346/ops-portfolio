@@ -1,6 +1,9 @@
+.env
+.env.*
+!.env.example
 node_modules/
 dist/
-.env
+.vite/
 .idea/
 *.iml
 backend/target/
